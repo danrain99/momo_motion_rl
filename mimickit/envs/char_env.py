@@ -87,6 +87,7 @@ class CharEnv(sim_env.SimEnv):
                                           name="character",
                                           start_pos=self._init_root_pos.cpu().numpy(),
                                           start_rot=self._init_root_rot.cpu().numpy(),
+                                          fix_root=env_config.get("char_fix_root", False),
                                           color=color)
         return char_id
     
@@ -233,7 +234,17 @@ class CharEnv(sim_env.SimEnv):
         sim_body_names = self._engine.get_obj_body_names(char_id)
         kin_body_names = self._kin_char_model.get_body_names()
 
+        if (len(sim_body_names) != len(kin_body_names)):
+            print("Body count mismatch: sim={:d}, kin={:d}".format(len(sim_body_names), len(kin_body_names)))
+            print("Sim bodies:", sim_body_names)
+            print("Kin bodies:", kin_body_names)
+            assert(False)
+
         for sim_name, kin_name in zip(sim_body_names, kin_body_names):
+            if (sim_name != kin_name):
+                print("Body name mismatch: sim={:s}, kin={:s}".format(sim_name, kin_name))
+                print("Sim bodies:", sim_body_names)
+                print("Kin bodies:", kin_body_names)
             assert(sim_name == kin_name)
         return
     

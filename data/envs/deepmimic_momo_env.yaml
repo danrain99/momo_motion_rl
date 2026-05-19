@@ -1,6 +1,6 @@
 env_name: "deepmimic"
 
-char_file: "/home/danwoo/isaaclab_ws/MimicKit_momo_deepmimic/data/assets/momo_grasp_cube/Collected_MOMO_AMP_only_robot_copy/momo2_dan_urdf_v1.usd"
+char_file: "data/assets/momo_grasp_cube/momo/momo2_dan_urdf_v1.usd"
 camera_mode: "still"
 
 episode_length: 10.0 # seconds
@@ -20,7 +20,7 @@ log_tracking_error: True
 ref_char_offset: [2.0, 0.0, 0.0] # m
 init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 # Align the motion root frame with the USD base_link rest orientation.
-motion_root_rot_offset: [0.0, 0.70710678, 0.70710678, 0.0]
+# motion_root_rot_offset: [0.0, 0.70710678, 0.70710678, 0.0]
 
 enable_early_termination: False
 key_bodies: ["left_link6", "right_link6"]

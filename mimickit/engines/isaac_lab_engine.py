@@ -917,7 +917,7 @@ class IsaacLabEngine(engine.Engine):
 
         articulation_props = sim_utils.ArticulationRootPropertiesCfg(
                     enabled_self_collisions=obj_cfg.enable_self_collisions, 
-                    fix_root_link=obj_cfg.fix_root)
+                    fix_root_link=False)
         
         rigid_props = sim_utils.RigidBodyPropertiesCfg(max_depenetration_velocity=10.0,
                                                        angular_damping=0.01,
@@ -945,11 +945,83 @@ class IsaacLabEngine(engine.Engine):
                                   actuator_value_resolution_debug_print=False,
                                   actuators={"actuators": actuator_cfg})
         prim = Articulation(art_cfg)
+        self._remove_invalid_usd_joints(prim_path)
+        self._set_articulation_fix_root_link(prim_path, obj_cfg.fix_root)
 
         if (obj_cfg.is_visual):
             self._disable_prim_collisions(prim_path)
 
         return prim
+
+    def _set_articulation_fix_root_link(self, prim_path, fix_root):
+        from pxr import Sdf, Usd, UsdPhysics
+
+        if (not fix_root):
+            return
+
+        root_prim = self._find_articulation_root_prim(prim_path)
+        if (root_prim is None):
+            Logger.print("Could not find articulation root under {:s}".format(prim_path))
+            return
+
+        root_body_prim = self._find_articulation_root_body_prim(root_prim)
+        if (root_body_prim is None):
+            Logger.print("Could not find root rigid body under {:s}".format(str(root_prim.GetPath())))
+            return
+
+        joint_path = root_prim.GetPath().AppendChild("FixedRootJoint")
+        fixed_joint = UsdPhysics.FixedJoint.Define(self._stage, joint_path)
+        fixed_joint.CreateBody1Rel().SetTargets([root_body_prim.GetPath()])
+        fixed_joint.CreateJointEnabledAttr().Set(True)
+        Logger.print("Created fixed root joint {:s} -> {:s}".format(str(joint_path), str(root_body_prim.GetPath())))
+        return
+
+    def _find_articulation_root_prim(self, prim_path):
+        from pxr import Usd, UsdPhysics
+
+        prim = self._stage.GetPrimAtPath(prim_path)
+        for curr_prim in Usd.PrimRange(prim):
+            if (curr_prim.HasAPI(UsdPhysics.ArticulationRootAPI)):
+                return curr_prim
+        return None
+
+    def _find_articulation_root_body_prim(self, articulation_prim):
+        from pxr import Usd, UsdPhysics
+
+        world_body_prim = None
+        first_body_prim = None
+        for curr_prim in Usd.PrimRange(articulation_prim):
+            if (curr_prim.HasAPI(UsdPhysics.RigidBodyAPI)):
+                if (first_body_prim is None):
+                    first_body_prim = curr_prim
+                if (curr_prim.GetName() == "world"):
+                    world_body_prim = curr_prim
+                    break
+
+        return world_body_prim if world_body_prim is not None else first_body_prim
+
+    def _remove_invalid_usd_joints(self, prim_path):
+        from pxr import Usd, UsdPhysics
+
+        prim = self._stage.GetPrimAtPath(prim_path)
+        invalid_joints = []
+
+        for curr_prim in Usd.PrimRange(prim):
+            joint = UsdPhysics.Joint.Get(self._stage, curr_prim.GetPath())
+            if (joint):
+                body0_targets = joint.GetBody0Rel().GetTargets()
+                body1_targets = joint.GetBody1Rel().GetTargets()
+
+                body0_valid = any(self._stage.GetPrimAtPath(path).HasAPI(UsdPhysics.RigidBodyAPI) for path in body0_targets)
+                body1_valid = any(self._stage.GetPrimAtPath(path).HasAPI(UsdPhysics.RigidBodyAPI) for path in body1_targets)
+
+                if ((not body0_valid) and (not body1_valid)):
+                    invalid_joints.append(curr_prim)
+
+        for joint_prim in invalid_joints:
+            Logger.print("Disabling invalid USD joint: {:s}".format(str(joint_prim.GetPath())))
+            joint_prim.SetActive(False)
+        return
     
     def _build_multi_obj_prim(self, obj_id, obj_cfg):
         obj_type = obj_cfg.obj_type
@@ -1127,8 +1199,16 @@ class IsaacLabEngine(engine.Engine):
                 _dfs_children_links(child_id)
         _dfs_children_links(0)
 
+        if (len(body_order_sim2common) >= 2):
+            body0_name = link_names[body_order_sim2common[0]]
+            body1_name = link_names[body_order_sim2common[1]]
+            if (body0_name == "world" and body1_name == "base_link"):
+                body_order_sim2common[0], body_order_sim2common[1] = body_order_sim2common[1], body_order_sim2common[0]
+
         dof_order_sim2common = []
         for link_id in body_order_sim2common[1:]:
+            if (link_id == 0):
+                continue
             dof_offset = joint_dof_offsets[link_id - 1]
             dof_count = joint_dof_counts[link_id - 1]
             dof_indices = list(range(dof_offset, dof_offset + dof_count))

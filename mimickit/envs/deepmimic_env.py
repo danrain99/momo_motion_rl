@@ -323,6 +323,7 @@ class DeepMimicEnv(char_env.CharEnv):
                                           name="ref_character",
                                           is_visual=True,
                                           enable_self_collisions=False,
+                                          fix_root=env_config.get("char_fix_root", False),
                                           disable_motors=True,
                                           color=color)
         return char_id
@@ -471,7 +472,10 @@ class DeepMimicEnv(char_env.CharEnv):
         char_id = self._get_char_id()
         root_rot = self._engine.get_root_rot(char_id)
         body_pos = self._engine.get_body_pos(char_id)
-        ground_contact_forces = self._engine.get_ground_contact_forces(char_id)
+        if (self._enable_early_termination and self._contact_body_ids.shape[0] > 0):
+            ground_contact_forces = self._engine.get_ground_contact_forces(char_id)
+        else:
+            ground_contact_forces = torch.zeros_like(body_pos)
 
         self._done_buf[:] = compute_done(done_buf=self._done_buf,
                                          time=self._time_buf, 

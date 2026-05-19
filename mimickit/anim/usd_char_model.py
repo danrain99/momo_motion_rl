@@ -30,19 +30,53 @@ class USDCharModel(kin_char_model.KinCharModel):
         local_rotation = [None] * num_bodies
         joints = [None] * num_bodies
 
-        parent_indices[0] = -1
-        local_translation[0] = np.array([0.0, 0.0, 0.0])
-        local_rotation[0] = np.array([0.0, 0.0, 0.0, 1.0])
-        joints[0] = self._build_root_joint()
+        root_body_idx = 0
+        parent_indices[root_body_idx] = -1
+        local_translation[root_body_idx] = np.array([0.0, 0.0, 0.0])
+        local_rotation[root_body_idx] = np.array([0.0, 0.0, 0.0, 1.0])
+        joints[root_body_idx] = self._build_root_joint()
 
         for joint_prim in joint_prims:
             body_prim0 = joint_prim.GetBody0Rel().GetTargets()
             body_prim1 = joint_prim.GetBody1Rel().GetTargets()
 
-            parent_name = body_prim0[0].name
+            if (len(body_prim1) == 0):
+                print("Skipping USD joint with no child body: {:s}".format(str(joint_prim.GetPath())))
+                continue
+
             child_name = body_prim1[0].name
+
+            if (len(body_prim0) == 0):
+                if (child_name in body_names):
+                    root_body_idx = body_names.index(child_name)
+                    parent_indices[root_body_idx] = -1
+                    local_translation[root_body_idx] = np.array([0.0, 0.0, 0.0])
+                    local_rotation[root_body_idx] = np.array([0.0, 0.0, 0.0, 1.0])
+                    joints[root_body_idx] = self._build_root_joint()
+                else:
+                    print("Skipping USD root joint with unknown child body: {:s}".format(str(joint_prim.GetPath())))
+                continue
+
+            parent_name = body_prim0[0].name
+            if ((parent_name not in body_names) or (child_name not in body_names)):
+                print("Skipping USD joint with non-rigid body target: {:s}".format(str(joint_prim.GetPath())))
+                continue
+
             parent_idx = body_names.index(parent_name)
             child_idx = body_names.index(child_name)
+
+            if (parent_name == "world" and child_name == "base_link"):
+                root_body_idx = child_idx
+                parent_indices[root_body_idx] = -1
+                local_translation[root_body_idx] = np.array([0.0, 0.0, 0.0])
+                local_rotation[root_body_idx] = np.array([0.0, 0.0, 0.0, 1.0])
+                joints[root_body_idx] = self._build_root_joint()
+
+                parent_indices[parent_idx] = root_body_idx
+                local_translation[parent_idx] = np.array([0.0, 0.0, 0.0])
+                local_rotation[parent_idx] = np.array([0.0, 0.0, 0.0, 1.0])
+                joints[parent_idx] = self._parse_fixed_joint(joint_prim)
+                continue
 
             pos_data = joint_prim.GetLocalPos0Attr().Get()
             pos = np.array([pos_data[0], pos_data[1], pos_data[2]])
@@ -73,11 +107,9 @@ class USDCharModel(kin_char_model.KinCharModel):
             local_rotation[child_idx] = rot
             joints[child_idx] = curr_joint
 
-        body_order = self._compute_body_order(parent_indices)
+        body_order = self._compute_body_order(parent_indices, root_body_idx)
 
-        parent_indices = [body_order.index(i) for i in parent_indices[1:]]
-        parent_indices = [-1] + parent_indices
-        parent_indices = [parent_indices[i] for i in body_order]
+        parent_indices = [parent_indices[i] if parent_indices[i] == -1 else body_order.index(parent_indices[i]) for i in body_order]
         body_names = [body_names[i] for i in body_order]
         local_translation = [local_translation[i] for i in body_order]
         local_rotation = [local_rotation[i] for i in body_order]
@@ -186,7 +218,7 @@ class USDCharModel(kin_char_model.KinCharModel):
                       axis=None)
         return joint
     
-    def _compute_body_order(self, parent_indices):
+    def _compute_body_order(self, parent_indices, root_body_idx=0):
         body_children = self._build_body_children_map(parent_indices)
         
         # recursively adding all bodies into the list in DFS order
@@ -198,6 +230,6 @@ class USDCharModel(kin_char_model.KinCharModel):
             for child in children_indices:
                 _traverse_dfs(child)
             
-        _traverse_dfs(0)
+        _traverse_dfs(root_body_idx)
 
         return body_order
