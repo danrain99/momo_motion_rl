@@ -1,0 +1,48 @@
+env_name: "deepmimic"
+
+char_file: "/home/danwoo/isaaclab_ws/MimicKit_momo_deepmimic/data/assets/momo_grasp_cube/Collected_MOMO_AMP_only_robot_copy/momo2_dan_urdf_v1.usd"
+camera_mode: "still"
+
+episode_length: 10.0 # seconds
+global_obs: False
+root_height_obs: False
+pose_termination: False
+pose_termination_dist: 1.0 # m
+enable_phase_obs: False
+enable_tar_obs: True
+num_phase_encoding: 4
+tar_obs_steps: [1, 2, 3]
+rand_reset: False
+zero_center_action: True
+char_fix_root: True
+log_tracking_error: True
+
+ref_char_offset: [2.0, 0.0, 0.0] # m
+init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+# Align the motion root frame with the USD base_link rest orientation.
+motion_root_rot_offset: [0.0, 0.70710678, 0.70710678, 0.0]
+
+enable_early_termination: False
+key_bodies: ["left_link6", "right_link6"]
+contact_bodies: []
+#contact_bodies: ["left_knee_link", "left_ankle_pitch_link", "left_ankle_roll_link", "right_knee_link", "right_ankle_pitch_link", "right_ankle_roll_link", "left_elbow_link", "left_wrist_roll_link", "left_wrist_pitch_link", "left_wrist_yaw_link", "right_elbow_link", "right_wrist_roll_link", "right_wrist_pitch_link", "right_wrist_yaw_link"] # cartwheel
+
+motion_file: "data/motions/momo/momo_grasp_v1_mimickit_reordered.pkl"
+# momo_joint_signs: [-1, 1, 1, -1, 1, 1, 1, -1, 1, -1, 1, 1] # left arm joints 1-6, right arm joints 1-6
+# momo_joint_offsets: [-0.15, 0.4, 0.0, 1.507, -0.8, 0, 0.15, -0.2, 0.5, 1.507, 0.5, 0] # added after signs/scales, radians
+
+# Leave unset for USD assets with fixed joints. DeepMimic will create weights
+# matching the kinematic joint count, while fixed joints still contribute no DoF.
+# joint_err_w: [1.0, 1.0, 1.0, 0.6, 0.5, 0.5, 1.0, 1.0, 1.0, 0.6, 0.5, 0.5]
+ 
+reward_pose_w: 0.4
+reward_vel_w: 0.05
+reward_root_pose_w: 0.0
+reward_root_vel_w: 0.0
+reward_key_pos_w: 0.55
+
+reward_pose_scale: 0.20
+reward_vel_scale: 0.01
+reward_root_pose_scale: 0.0
+reward_root_vel_scale: 0.0
+reward_key_pos_scale: 1.0
