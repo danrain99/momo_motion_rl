@@ -195,7 +195,7 @@ class CharEnv(sim_env.SimEnv):
                     diff_high = np.abs(j_high - curr_mid)
                     diff_low = np.abs(j_low - curr_mid)
                     curr_scale = np.maximum(diff_high, diff_low)
-                    curr_scale *= 1.4
+                    curr_scale *= 1.0
 
                     curr_low = curr_mid - curr_scale
                     curr_high = curr_mid + curr_scale
