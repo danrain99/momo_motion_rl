@@ -15,6 +15,7 @@ tar_obs_steps: [1, 2, 3]
 rand_reset: True
 zero_center_action: True
 log_tracking_error: False
+debug_ref_motion_control: True
 
 ref_char_offset: [2.0, 0.0, 0.0] # m
 init_pose: [0, 0, 0.8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.57, 0, 0, 0, 0, 0, 0, 1.57, 0, 0, 0]

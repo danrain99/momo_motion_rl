@@ -21,8 +21,13 @@ class DeepMimicEnv(char_env.CharEnv):
         self._tar_obs_steps = env_config.get("tar_obs_steps", [1])
         self._tar_obs_steps = torch.tensor(self._tar_obs_steps, device=device, dtype=torch.int)
         self._rand_reset = env_config.get("rand_reset", True)
+        self._debug_ref_motion_control = env_config.get("debug_ref_motion_control", False)
+        self._char_fix_root = env_config.get("char_fix_root", False)
         
         self._ref_char_offset = torch.tensor(env_config["ref_char_offset"], device=device, dtype=torch.float)
+        motion_root_rot_offset = env_config.get("motion_root_rot_offset", [0.0, 0.0, 0.0, 1.0])
+        self._motion_root_rot_offset = torch.tensor(motion_root_rot_offset, device=device, dtype=torch.float32)
+        self._motion_root_rot_offset = torch_util.quat_normalize(self._motion_root_rot_offset)
         self._log_tracking_error = env_config.get("log_tracking_error", False)
         
         self._reward_pose_w = env_config.get("reward_pose_w")
@@ -42,6 +47,13 @@ class DeepMimicEnv(char_env.CharEnv):
         super().__init__(env_config=env_config, engine_config=engine_config,
                          num_envs=num_envs, device=device, visualize=visualize,
                          record_video=record_video)
+        return
+
+    def _pre_physics_step(self, actions):
+        if (self._debug_ref_motion_control):
+            self._apply_action(self._ref_dof_pos)
+        else:
+            super()._pre_physics_step(actions)
         return
     
     def get_reward_succ(self):
@@ -93,8 +105,10 @@ class DeepMimicEnv(char_env.CharEnv):
 
         self._ref_root_pos = torch.zeros_like(root_pos)
         self._ref_root_rot = torch.zeros_like(root_rot)
+        self._sim_root_rot = torch.zeros_like(root_rot)
         self._ref_root_vel = torch.zeros_like(root_vel)
         self._ref_root_ang_vel = torch.zeros_like(root_ang_vel)
+        self._sim_root_ang_vel = torch.zeros_like(root_ang_vel)
         self._ref_body_pos = torch.zeros_like(body_pos)
         self._ref_body_rot = torch.zeros_like(body_rot)
         self._ref_joint_rot = torch.zeros_like(body_rot[..., 1:, :])
@@ -113,6 +127,13 @@ class DeepMimicEnv(char_env.CharEnv):
                                                 kin_char_model=self._kin_char_model,
                                                 device=self._device)
         return
+
+    def _apply_motion_root_rot_offset(self, root_rot, root_ang_vel):
+        root_rot_offset = self._motion_root_rot_offset.expand_as(root_rot)
+        root_rot = torch_util.quat_mul(root_rot_offset, root_rot)
+        root_rot = torch_util.quat_normalize(root_rot)
+        root_ang_vel = torch_util.quat_rotate(root_rot_offset, root_ang_vel)
+        return root_rot, root_ang_vel
     
     def _parse_joint_err_weights(self, joint_err_w):
         num_joints = self._kin_char_model.get_num_joints()
@@ -160,10 +181,12 @@ class DeepMimicEnv(char_env.CharEnv):
         ref_char_id = self._get_ref_char_id()
 
         root_pos = self._ref_root_pos[env_ids] + self._ref_char_offset
+        root_rot = self._sim_root_rot[env_ids] if self._char_fix_root else self._ref_root_rot[env_ids]
+        root_ang_vel = self._sim_root_ang_vel[env_ids] if self._char_fix_root else self._ref_root_ang_vel[env_ids]
         self._engine.set_root_pos(env_ids, ref_char_id, root_pos)
-        self._engine.set_root_rot(env_ids, ref_char_id, self._ref_root_rot[env_ids])
+        self._engine.set_root_rot(env_ids, ref_char_id, root_rot)
         self._engine.set_root_vel(env_ids, ref_char_id, self._ref_root_vel[env_ids])
-        self._engine.set_root_ang_vel(env_ids, ref_char_id, self._ref_root_ang_vel[env_ids])
+        self._engine.set_root_ang_vel(env_ids, ref_char_id, root_ang_vel)
         
         self._engine.set_dof_pos(env_ids, ref_char_id, self._ref_dof_pos[env_ids])
         self._engine.set_dof_vel(env_ids, ref_char_id, self._ref_dof_vel[env_ids])
@@ -179,11 +202,16 @@ class DeepMimicEnv(char_env.CharEnv):
         self._motion_time_offsets[env_ids] = motion_times
 
         root_pos, root_rot, root_vel, root_ang_vel, joint_rot, dof_vel = self._motion_lib.calc_motion_frame(motion_ids, motion_times)
+        sim_root_rot = root_rot
+        sim_root_ang_vel = root_ang_vel
+        root_rot, root_ang_vel = self._apply_motion_root_rot_offset(root_rot, root_ang_vel)
 
         self._ref_root_pos[env_ids] = root_pos
         self._ref_root_rot[env_ids] = root_rot
+        self._sim_root_rot[env_ids] = sim_root_rot
         self._ref_root_vel[env_ids] = root_vel
         self._ref_root_ang_vel[env_ids] = root_ang_vel
+        self._sim_root_ang_vel[env_ids] = sim_root_ang_vel
         self._ref_joint_rot[env_ids] = joint_rot
         self._ref_dof_vel[env_ids] = dof_vel
         
@@ -203,9 +231,11 @@ class DeepMimicEnv(char_env.CharEnv):
         char_id = self._get_char_id()
         
         self._engine.set_root_pos(env_ids, char_id, self._ref_root_pos[env_ids])
-        self._engine.set_root_rot(env_ids, char_id, self._ref_root_rot[env_ids])
+        root_rot = self._sim_root_rot[env_ids] if self._char_fix_root else self._ref_root_rot[env_ids]
+        root_ang_vel = self._sim_root_ang_vel[env_ids] if self._char_fix_root else self._ref_root_ang_vel[env_ids]
+        self._engine.set_root_rot(env_ids, char_id, root_rot)
         self._engine.set_root_vel(env_ids, char_id, self._ref_root_vel[env_ids])
-        self._engine.set_root_ang_vel(env_ids, char_id, self._ref_root_ang_vel[env_ids])
+        self._engine.set_root_ang_vel(env_ids, char_id, root_ang_vel)
         
         self._engine.set_dof_pos(env_ids, char_id, self._ref_dof_pos[env_ids])
         self._engine.set_dof_vel(env_ids, char_id, self._ref_dof_vel[env_ids])
@@ -233,11 +263,16 @@ class DeepMimicEnv(char_env.CharEnv):
         motion_ids = self._motion_ids
         motion_times = self._get_motion_times()
         root_pos, root_rot, root_vel, root_ang_vel, joint_rot, dof_vel = self._motion_lib.calc_motion_frame(motion_ids, motion_times)
+        sim_root_rot = root_rot
+        sim_root_ang_vel = root_ang_vel
+        root_rot, root_ang_vel = self._apply_motion_root_rot_offset(root_rot, root_ang_vel)
         
         self._ref_root_pos[:] = root_pos
         self._ref_root_rot[:] = root_rot
+        self._sim_root_rot[:] = sim_root_rot
         self._ref_root_vel[:] = root_vel
         self._ref_root_ang_vel[:] = root_ang_vel
+        self._sim_root_ang_vel[:] = sim_root_ang_vel
         self._ref_joint_rot[:] = joint_rot
         self._ref_dof_vel[:] = dof_vel
 
@@ -256,9 +291,10 @@ class DeepMimicEnv(char_env.CharEnv):
 
         root_pos = self._ref_root_pos + self._ref_char_offset
         body_pos = self._ref_body_pos + self._ref_char_offset
+        root_rot = self._sim_root_rot if self._char_fix_root else self._ref_root_rot
 
         self._engine.set_root_pos(None, ref_char_id, root_pos)
-        self._engine.set_root_rot(None, ref_char_id, self._ref_root_rot)
+        self._engine.set_root_rot(None, ref_char_id, root_rot)
         self._engine.set_root_vel(None, ref_char_id, 0.0)
         self._engine.set_root_ang_vel(None, ref_char_id, 0.0)
         
